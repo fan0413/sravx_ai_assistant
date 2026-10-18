@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+coverage/
+logs/
+*.log
+private/
+.DS_Store
+*.pem
+*.key
+.idea/
+__pycache__/
+*.py[cod]
