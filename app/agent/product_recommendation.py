@@ -16,22 +16,19 @@ recommendation_agent=create_agent(
     ],
     checkpointer=InMemorySaver()
 )
-config={
-    "configurable":{
-        "thread_id":"test01"
-    }
-}
-while True:
-    user_input = input()
-    if  user_input == "exit":
-        break
-    else:
-        resp = recommendation_agent.invoke(
-            {
-                "messages": [
-                    HumanMessage(content=user_input)
-                ]
-            },
-        config=config
-        )
-    rprint(resp["messages"][-1].content)
+
+if __name__ == "__main__":
+
+    while True:
+        user_input = input()
+        if user_input == "exit":
+            break
+        else:
+            resp = recommendation_agent.invoke(
+                {
+                    "messages": [
+                        HumanMessage(content=user_input)
+                    ]
+                },
+            )
+        rprint(resp["messages"][-1].content)
