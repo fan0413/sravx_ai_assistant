@@ -25,5 +25,6 @@
 
 - [立项与实施步骤](docs/project-plan.md)
 - [学习开发日志](docs/development-log.md)
+- [技术说明：模块、变量、函数与工具](docs/technical-reference.md)
 
 不得提交密钥、真实客户资料、订单数据、生产配置或完整敏感调用日志。
