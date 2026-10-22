@@ -1,39 +1,34 @@
 # 技术说明：模块、变量、函数与工具
 
-更新日期：2026-10-20。依据当前本地源码整理；描述已实现内容，计划与待修正项另列。修改代码时同步更新本文件，不记录密钥值或真实客户资料。
+更新日期：2026-10-22。依据当前本地源码整理；描述已实现内容，计划与待修正项另列。修改代码时同步更新本文件，不记录密钥值或真实客户资料。
 
 ## 1. 模块分工
 
 | 文件 | 用途 | 当前状态 |
 |---|---|---|
-| `app/main.py` | FastAPI 应用与 HTTP 路由入口 | 仅有健康检查 |
+| `app/main.py` | FastAPI 应用与 HTTP 路由入口 | 注册对话路由并管理连接池与数据库版 Agent |
 | `app/model.py` | 加载环境配置、初始化模型客户端 | 供 Agent 导入 |
 | `app/prompts/recommendation_promt.py` | 保存商品推荐助手的业务规则 | 文件名按当前源码记录 |
-| `app/agent/product_recommendation.py` | 组合模型、提示词与工具 | 工具尚未注册；含顶层测试请求 |
-| `app/tools/search_products.py` | 查询商城商品，整理结果与错误状态 | 可独立调用，尚未接入 Agent |
+| `app/agent/product_recommendation.py` | 组合模型、提示词与工具 | 工厂函数创建 Agent；终端交互已隔离 |
+| `app/tools/search_products.py` | 查询商城商品，整理结果与错误状态 | 可独立调用，已注册到 Agent |
 | 各目录中的 `__init__.py` | 标识 Python 包 | 当前无业务逻辑 |
 
-## 2. FastAPI 入口
+## 2. HTTP 对话接口与生命周期
 
-| 名称 | 类型 | 用途与输入输出 |
-|---|---|---|
-| `app` | `FastAPI` 应用对象 | 注册接口；应用标题为“商品推荐助手” |
-| `health()` | 函数 | 无参数，返回 `{"status": "ok"}` |
-| `GET /health` | HTTP 接口 | 检查应用能否响应，不检查模型或商品接口是否可用 |
+- app：FastAPI 应用对象，当前标题为“商品助手”；注册 /api 路由前缀，当前未定义根路径及 /health。
+- POST /api/chat：ChatRequest 接收 message、session_id；ChatResponse 返回 reply。当前字段为字符串，尚未声明长度限制。
+- chat(request, http_request)：从 http_request.app.state.recommendation_agent 获取 Agent，将新增 HumanMessage 和 thread_id 配置传给 invoke()，提取最后一条消息正文。
+- Request：FastAPI 请求对象，用来访问应用状态，不是用户提交的数据结构。
+- lifespan(app)：启动时 pool.open()、pool.wait(timeout=10)，创建 PostgresSaver(pool) 及 Agent；yield 后处理请求，退出时 finally 关闭池。
+- app.state.db_pool：服务持有的连接池；app.state.recommendation_agent：使用数据库检查点的 Agent。
 
-从项目根目录启动：
-
-```powershell
-python -m uvicorn app.main:app --reload
-```
-
-`app.main` 指模块，冒号后的 `app` 指应用对象。`--reload` 用于开发时自动重载。
+启动命令：`python -m uvicorn app.main:app --reload`。直接运行 main.py 不会启动 Uvicorn；自动重载会重新创建应用资源，但数据库状态可保留。
 
 ## 3. 模型配置与客户端
 
 | 名称 | 用途 | 当前实际行为 |
 |---|---|---|
-| `load_dotenv(override=True)` | 加载 `.env` 中的环境变量 | 同名配置可覆盖已有环境变量；未显式指定文件路径 |
+| `load_dotenv(dotenv_path=env_path)` | 加载 `.env` 中的环境变量 | 基于 model.py 位置读取 app/.env，默认不覆盖已有环境变量 |
 | `init_chat_model(...)` | 创建 LangChain 模型客户端 | 当前传入 `deepseek-v4-flash`，未显式指定 provider |
 | `model` | 模型客户端对象 | 提供模型调用能力；初始化本身不等于发送问答请求 |
 | `extra_body` | 附加请求参数 | 当前传入 `thinking.type=disabled`，用于请求关闭思考模式 |
@@ -50,9 +45,9 @@ python -m uvicorn app.main:app --reload
 
 | 名称 | 类型 | 用途 |
 |---|---|---|
-| `recommendation_prompt` | 字符串 | 规定目标用户、选购需求收集、事实依据和承诺边界；当前明确说明未接工具 |
+| `recommendation_prompt` | 字符串 | 规定目标用户、选购需求收集、事实依据和承诺边界；规则应与实际工具能力保持一致 |
 | `create_agent(...)` | 框架函数 | 将模型、工具与系统提示词组装为可运行的 Agent |
-| `recommendation_agent` | Agent 对象 | 当前 `tools=[]`，只能基于消息和提示词回复，不能查询商品 |
+| `recommendation_agent` | Agent 对象 | 由创建函数返回；已注册 search_products，保存方式由 checkpointer 参数决定 |
 | `HumanMessage` | 消息类 | 表示用户输入 |
 | `resp` | Agent 返回的状态结果 | 包含 `messages`；可用 `resp["messages"][-1].content` 取最后一条消息正文 |
 
@@ -62,7 +57,7 @@ Agent 所需的输入结构示例：
 {"messages": [HumanMessage(content="我想买一把弯剪")]}
 ```
 
-注意：当前源码误写为 `"message"`，需修正为 `"messages"`；本例说明正确约定，不代表已修改源码。
+HTTP 接口每轮传入新增消息，使用 config.configurable.thread_id 关联检查点历史。
 
 ## 5. 商品查询工具
 
@@ -135,25 +130,46 @@ python -m app.tools.search_products
 
 当前文件的 `__main__` 测试入口执行 `search_products.invoke({"keyword": "弯剪"})`，会请求公开商品接口，不调用模型。
 
-## 6. 当前调用关系与待办
+## 6. PostgreSQL、检查点与调用关系
 
-当前是三条独立链路：
+| 导入或名称 | 用途 |
+|---|---|
+| psycopg | PostgreSQL 驱动，执行连接与 SQL |
+| psycopg.rows.dict_row | 驱动内部行格式工厂，使查询结果按字段名读取 |
+| psycopg_pool.ConnectionPool | 独立连接池包的类，复用数据库连接 |
+| PostgresSaver | LangGraph PostgreSQL 检查点实现，保存和恢复会话状态 |
+| asynccontextmanager | contextlib 标准库装饰器，为 FastAPI 提供生命周期上下文 |
+| check_connection() | 只读查询当前账号和数据库，验证基本连接 |
+| create_connection_pool() | 创建尚未打开的同步池，最少1个、最多5个连接 |
+| setup_checkpoints() | 在 app/seup_checkpoints.py 中执行 setup()，创建表及运行组件迁移，不放在聊天请求中执行 |
+| create_recommendation_agent(checkpointer) | 创建并返回使用指定保存器的 Agent；不是发送消息的函数 |
+
+连接池使用空 conninfo，读取本地环境中的 PGHOST、PGPORT、PGDATABASE、PGUSER、PGPASSWORD。SSH 开发连接使用本地127.0.0.1:15432转发到服务器 PostgreSQL；隧道需另行保持运行，DataGrip 的连接不自动供 Python 使用。凭据与私钥不写入本文。
+
+池配置：open=False，kwargs 包含 autocommit=True、row_factory=dict_row、connect_timeout=10。autocommit 用于提交写入及迁移，dict_row 满足保存器按列名读取要求。当前泛型标注未明确字典行类型，编辑器可能提示不匹配。
+
+| 表 | 用途 |
+|---|---|
+| checkpoints | 会话检查点快照与元数据 |
+| checkpoint_blobs | 快照引用的通道数据内容 |
+| checkpoint_writes | 执行过程的中间写入 |
+| checkpoint_migrations | 表结构迁移版本 |
+
+运行链路：
 
 ```text
-HTTP /health → health() → 固定健康状态
-Agent测试 → model + recommendation_prompt → 回复
-工具测试 → search_products → 商城API → 商品列表
+启动 → 连接池就绪 → PostgresSaver → 创建Agent → app.state
+POST /api/chat → 获取Agent → 新增消息与thread_id → 模型/商品工具
+                                              ↕
+                                       PostgreSQL检查点
+关闭 → 释放连接池
 ```
 
-尚未连接“用户端 → 对话接口 → Agent → 商品工具”的完整链路。
+HTTP 使用数据库记忆；终端 __main__ 入口使用 InMemorySaver，当前缺少调用时的 thread_id 配置，仍需补齐。旧内存历史不会自动迁移进 PostgreSQL。
 
-接入前待办：
+验证：依据用户重启确认与截图，同一会话恢复测试编号和选购条件；两个已有会话表现符合各自历史。全新会话隔离、用户身份授权和并发正确性未完成验证。
 
-1. 修正 Agent 的 messages 键名，隔离顶层测试请求，避免导入模块时自动调用模型。
-2. 将查询参数类绑定工具，统一关键词长度与接口口径。
-3. 在 Agent 中注册工具，并同步更新提示词中“尚未接入”的说明。
-4. 隔离测试商品，验证空结果、请求失败、价格与库存边界。
-5. 将模型名、商品接口地址等配置集中管理；验证思考模式实际行为。
+待办：绑定工具输入 schema 并统一长度；完善输入、异常与超时控制；区分测试商品；规范配置与类型标注；补会话归属、历史保留及备份。未来 RAG 可另行扩展，不将检查点表当向量知识库。
 
 ## 7. 文档维护约定
 
