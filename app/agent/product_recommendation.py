@@ -1,26 +1,29 @@
 from langchain.agents import create_agent
 from langgraph.checkpoint.memory import InMemorySaver
 
+
 from app.model import model
 from app.prompts.recommendation_promt import recommendation_prompt
 from langchain.messages import *
 import app.tools
 from app.tools import search_products
 from rich import print as rprint
-recommendation_agent=create_agent(
-    name=" product_recommendation",
-    model=model,
-    system_prompt=recommendation_prompt,
-    tools=[
-        search_products.search_products
-    ],
-    checkpointer=InMemorySaver()
+def create_recommendation_agent(checkpointer):
+    return create_agent(
+        name=" product_recommendation",
+        model=model,
+        system_prompt=recommendation_prompt,
+         tools=[
+             search_products.search_products
+         ],
+        checkpointer=checkpointer,
 )
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
+    recommendation_agent = create_recommendation_agent(InMemorySaver())
     while True:
-        user_input = input()
+        user_input = input("你：").strip()
         if user_input == "exit":
             break
         else:
