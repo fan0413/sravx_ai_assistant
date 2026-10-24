@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=env_path)
 from psycopg.rows import dict_row
-from psycopg_pool import  ConnectionPool
+from psycopg_pool import  ConnectionPool,PoolTimeout
 
 #检查初始化链接测试
 def check_connection():
@@ -15,7 +15,7 @@ def check_connection():
             user,database=cursor.fetchone()
             print(f"Connected to {user}:{database}")
 
-
+#建立连接池
 def create_connection_pool()->ConnectionPool:
     return ConnectionPool(
         conninfo="",
