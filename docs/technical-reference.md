@@ -1,6 +1,6 @@
 # 技术说明：模块、变量、函数与工具
 
-更新日期：2026-10-22。依据当前本地源码整理；描述已实现内容，计划与待修正项另列。修改代码时同步更新本文件，不记录密钥值或真实客户资料。
+更新日期：2026-10-24。依据当前本地源码整理；描述已实现内容，计划与待修正项另列。修改代码时同步更新本文件，不记录密钥值或真实客户资料。
 
 ## 1. 模块分工
 
@@ -11,12 +11,16 @@
 | `app/prompts/recommendation_promt.py` | 保存商品推荐助手的业务规则 | 文件名按当前源码记录 |
 | `app/agent/product_recommendation.py` | 组合模型、提示词与工具 | 工厂函数创建 Agent；终端交互已隔离 |
 | `app/tools/search_products.py` | 查询商城商品，整理结果与错误状态 | 可独立调用，已注册到 Agent |
+| `app/embedding.py` | 创建向量模型封装 | 独立运行曾返回1024维向量 |
+| `app/setup_knowledge.py` | 创建知识库引擎并初始化向量表 | 建表成功；包含 Windows 事件循环配置 |
+| `app/knowledge.py` | 创建向量存储对象 | 初稿存在导入与参数待修正项，未接入 Agent |
+| `knowledge/` | 保存品牌知识与售后知识 Markdown | 正文已整理，未完成向量化入库 |
 | 各目录中的 `__init__.py` | 标识 Python 包 | 当前无业务逻辑 |
 
 ## 2. HTTP 对话接口与生命周期
 
 - app：FastAPI 应用对象，当前标题为“商品助手”；注册 /api 路由前缀，当前未定义根路径及 /health。
-- POST /api/chat：ChatRequest 接收 message、session_id；ChatResponse 返回 reply。当前字段为字符串，尚未声明长度限制。
+- POST /api/chat：ChatRequest 接收 message、session_id；ChatResponse 返回 reply。message 为1～1000字符，session_id 为1～100字符，先去除字符串首尾空白。
 - chat(request, http_request)：从 http_request.app.state.recommendation_agent 获取 Agent，将新增 HumanMessage 和 thread_id 配置传给 invoke()，提取最后一条消息正文。
 - Request：FastAPI 请求对象，用来访问应用状态，不是用户提交的数据结构。
 - lifespan(app)：启动时 pool.open()、pool.wait(timeout=10)，创建 PostgresSaver(pool) 及 Agent；yield 后处理请求，退出时 finally 关闭池。
@@ -31,6 +35,7 @@
 | `load_dotenv(dotenv_path=env_path)` | 加载 `.env` 中的环境变量 | 基于 model.py 位置读取 app/.env，默认不覆盖已有环境变量 |
 | `init_chat_model(...)` | 创建 LangChain 模型客户端 | 当前传入 `deepseek-v4-flash`，未显式指定 provider |
 | `model` | 模型客户端对象 | 提供模型调用能力；初始化本身不等于发送问答请求 |
+| `timeout`、`max_retries` | 网络请求超时与重试 | 当前分别为15秒、最多额外重试2次；不是整次 Agent 请求的总耗时限制 |
 | `extra_body` | 附加请求参数 | 当前传入 `thinking.type=disabled`，用于请求关闭思考模式 |
 
 配置约定：
@@ -128,7 +133,7 @@ HTTP 接口每轮传入新增消息，使用 config.configurable.thread_id 关�
 python -m app.tools.search_products
 ```
 
-当前文件的 `__main__` 测试入口执行 `search_products.invoke({"keyword": "弯剪"})`，会请求公开商品接口，不调用模型。
+当前源码已无 `__main__` 测试入口，直接运行上述命令不会执行商品查询。需要独立验证时，应明确编写调用入口；实际调用工具会请求公开商品接口，不调用模型。
 
 ## 6. PostgreSQL、检查点与调用关系
 
@@ -167,10 +172,105 @@ POST /api/chat → 获取Agent → 新增消息与thread_id → 模型/商品工
 
 HTTP 使用数据库记忆；终端 __main__ 入口使用 InMemorySaver，当前缺少调用时的 thread_id 配置，仍需补齐。旧内存历史不会自动迁移进 PostgreSQL。
 
-验证：依据用户重启确认与截图，同一会话恢复测试编号和选购条件；两个已有会话表现符合各自历史。全新会话隔离、用户身份授权和并发正确性未完成验证。
+验证：完成服务重启并核对响应截图后，确认同一会话恢复测试编号和选购条件；两个已有会话表现符合各自历史。全新会话隔离、用户身份授权和并发正确性未完成验证。
 
-待办：绑定工具输入 schema 并统一长度；完善输入、异常与超时控制；区分测试商品；规范配置与类型标注；补会话归属、历史保留及备份。未来 RAG 可另行扩展，不将检查点表当向量知识库。
+待办：绑定工具输入 schema 并统一长度；进一步验证输入、异常与超时控制；区分测试商品；规范配置与类型标注；补会话归属、历史保留及备份。未来 RAG 可另行扩展，不将检查点表当向量知识库。
 
-## 7. 文档维护约定
+## 7. 输入约束与异常响应
+
+| 名称 | 用途与实际设置 |
+|---|---|
+| ConfigDict | Pydantic 模型配置；ChatRequest.model_config 设置 str_strip_whitespace=True |
+| Field | 字段长度校验，message 为1～1000字符，session_id 为1～100字符 |
+| HTTPException | FastAPI HTTP 错误响应，指定状态码与 detail |
+| APITimeoutError | 底层 openai 兼容客户端的模型请求超时异常，不表示改用其他模型服务商 |
+| OperationalError、InterfaceError | psycopg 的数据库运行或接口状态异常 |
+| PoolTimeout | psycopg_pool 等待可用连接超时 |
+| GraphRecursionError | LangGraph 单次执行超过图步数预算 |
+
+响应约定：
+
+| 情况 | HTTP 状态 | 当前提示 |
+|---|---|---|
+| 输入校验不通过 | 422 | FastAPI/Pydantic 默认字段错误信息 |
+| 模型请求超时 | 504 | 模型响应超时 |
+| 数据库连接或池故障 | 503 | 会话存储暂不可用 |
+| 图执行步达到上限 | 503 | 本次处理步骤过多，请缩小查询范围后重试 |
+
+这些处理覆盖 invoke() 中对应异常，不涵盖所有网络错误、SQL错误或启动故障。成功结果仍由 ChatResponse 返回 reply；未使用流式响应。
+
+调用 config 除 configurable.thread_id 外，设置顶层 recursion_limit=12。每次 invoke 单独计算图执行预算，不限制整段会话轮数。并行工具调用数不与步数一一对应；精确调用次数限制需另行实现，可考虑 Agent 中间件。
+
+已验证：纯空白消息及空会话ID返回422。未确认：超长输入、异常模拟、真实断连恢复、步数上限触发等测试结果。timeout=15 和 max_retries=2 不构成整次请求15秒内完成的保证。
+
+## 8. Embedding 与知识向量库
+
+### 向量模型
+
+| 名称或配置 | 用途与当前行为 |
+|---|---|
+| create_embedding_model() | 返回 OpenAIEmbeddings；读取 app/.env，不在此展示密钥值 |
+| EMBEDDING_MODEL | 指定向量模型；学习记录中接通的是百炼 qwen3.7-text-embedding，源码从环境变量读取，未在本文读取本地配置值 |
+| EMBEDDING_API_KEY、EMBEDDING_BASE_URL | 分别指定向量服务凭据与兼容接口地址，与聊天模型配置独立 |
+| dimensions=1024 | 向量维度，与知识表 vector_size 保持一致 |
+| chunk_size=10 | 每批文本条数，不是知识片段长度 |
+| check_embedding_ctx_length=False | 关闭客户端对应长度处理，仍需遵守服务端限制 |
+| request_timeout=15、max_retries=2 | 当前网络请求配置，不构成整个入库过程的总耗时限制 |
+| embed_query()、embed_documents() | 分别向量化问题和多段资料；实际调用会请求向量服务 |
+
+独立入口为 `python -m app.embedding`，会发送真实向量请求。学习记录确认曾返回1024维向量；创建封装对象本身不代表调用成功。兼容客户端需使用兼容接口路径，不直接套用原生 SDK 路径。
+
+### 引擎与初始化
+
+| 名称 | 用途与当前状态 |
+|---|---|
+| create_knowledge_engine() | 使用 sqlalchemy.URL.create() 组装数据库连接，再由 PGEngine.from_connection_string() 创建引擎 |
+| PGHOST、PGPORT、PGDATABASE、PGUSER、PGPASSWORD | 数据库配置名称；与会话库共用配置来源，但知识引擎不是 main.py 中的 psycopg 连接池 |
+| WindowsSelectorEventLoopPolicy | 当前 Python 3.12 Windows 环境的兼容配置，在创建引擎前设置 |
+| init_vectorstore_table() | 脚本入口初始化 knowledge_chunks，vector_size=1024；不是每次请求执行的操作 |
+| asyncio.run(engine.close()) | 初始化脚本 finally 中关闭引擎 |
+
+学习记录确认项目数据库已启用 pgvector 0.6.0，知识表初始化成功；本文未重新连接数据库核查表结构、行数或权限。初始化表不等于写入知识，也不修改会话检查点用途。
+
+### 向量存储初稿与待修正项
+
+当前 app/knowledge.py 中函数实际名为 `creat_knowledge_store()`，调用 `PGVectorStore.create_sync()`。源码存在以下待修正项，不能作为已可用的知识检索入口：
+
+- 从 app.setup_knowledge 导入 engine，但该变量仅在脚本 __main__ 中赋值，普通导入时没有对应模块变量。
+- 函数未接收 engine；已讨论改为 create_knowledge_store(engine)，由调用方创建、传入并关闭引擎，但当前源码未落实。
+- 当前传入 embedding_model，学习中讨论的参数为 embedding_service；需按实际安装版本核对签名后修正。
+- 未实现 Markdown 读取、切分、文档写入或相似度查询，未接入 FastAPI 生命周期，也未注册 search_knowledge 工具。
+
+目标链路（尚未完成）：
+
+```text
+Markdown正文 → 按标题切分 → 文档向量化 → knowledge_chunks
+用户问题 → 问题向量化 → 检索相关片段 → Agent依据资料回答
+```
+
+## 9. Markdown 知识源与维护边界
+
+| 路径 | 内容与用途 |
+|---|---|
+| knowledge/02宠物美容剪刀与工具/宠物美容剪刀.md | 品牌系列、钢材资料、剪型、尺寸、左右手及颜色；售前专业知识正文 |
+| knowledge/03售后与维护/剪刀使用异常与维护.md | 使用养护、夹毛、推毛、开合异常、清洁润滑与收纳；售后知识正文 |
+| knowledge/README.md | 目录、维护口径与后续导入建议，不作为知识正文导入 |
+| docs/knowledge-maintenance.md | 保留推荐优先级、默认右手等行为规则；不入库，尚未接入提示词 |
+| docs/knowledge-source-review.md | 外部来源摘要、访问局限及更正记录；不入库 |
+
+维护口径：
+
+- Basic通常对应9CR13练习与入门定位，Pro通常对应440C或China 440C日用主力、中高端定位，Master通常对应VG10高端定位；具体商品说明优先。
+- 商品名称保留China 440C，材料属性按9CR18，使用性能参照440C属于品牌确认口径；不写成外部检测结论。
+- 耐腐蚀、锋利度保持和抗崩口为品牌内部相对评级，不代表成品检测、初始锋利度或抗摔保证。
+- 剪刀语境中的“寸”为英寸简称，标称尺寸不等于有效刃长；左右手重点区分刀片交叠结构，不能仅凭手柄判断。
+- 推荐流程与默认条件保留在维护记录，尚未进入应用提示词；当前提示词仍有按销量和价格排序的旧要求，商品工具不提供对应完整排序依据，需另行同步。
+- 外部资料的重要摘要已写入本地正文，链接用于追溯；文本检索不会因存在链接就自动访问网页。
+
+后续导入按明确的正文文件范围执行，排除目录说明与维护文件；优先按标题切分，保留文档路径、标题层级、品牌、更新时间和来源。钢材资料卡及表头、评级性质应与正文保持关联。重新入库需替换旧片段，避免新旧版本同时命中；目前这些是维护约定，尚未实现导入流程。
+
+图片当前仅用于人工辅助整理知识，尚未实现图片识别、图片检索或用户上传图片处理。
+
+## 10. 文档维护约定
 
 新增变量、函数或工具时记录用途、输入、输出、调用方和副作用；行为变更时同步更新。技术说明记录当前代码约定，开发日志记录变更原因、困难与验证结果。

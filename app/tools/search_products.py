@@ -52,6 +52,7 @@ def search_products(keyword: str)->dict:
             "products": products,
             "note": "仅返回第一页最多5款；价格为起售价，库存和具体规格需另查详情。",
         }
+
     except httpx.TimeoutException:
         return {"status": "timeout", "products": []}
     except httpx.HTTPError:
@@ -59,5 +60,3 @@ def search_products(keyword: str)->dict:
     except ValueError:
         return {"status": "invalid_response", "products": []}
 
-if __name__ == "__main__":
-    print(search_products.invoke({"keyword": "弯剪"}))
