@@ -2,7 +2,7 @@ import psycopg
 from dotenv import load_dotenv
 from pathlib import Path
 from psycopg.rows import dict_row
-load_dotenv(Path(__file__).resolve().parent/".env")
+load_dotenv(Path(__file__).resolve().parent.parent/".env")
 from langgraph.checkpoint.postgres import PostgresSaver
 
 

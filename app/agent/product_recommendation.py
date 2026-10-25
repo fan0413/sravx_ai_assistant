@@ -8,14 +8,16 @@ from langchain.messages import *
 import app.tools
 from app.tools import search_products
 from rich import print as rprint
-def create_recommendation_agent(checkpointer):
+def create_recommendation_agent(checkpointer,knowledge_tool=None):
+    tools = [search_products.search_products]
+    if knowledge_tool is not None:
+        tools.append(knowledge_tool)
+
     return create_agent(
         name=" product_recommendation",
         model=model,
         system_prompt=recommendation_prompt,
-         tools=[
-             search_products.search_products
-         ],
+         tools=tools,
         checkpointer=checkpointer,
 )
 

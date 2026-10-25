@@ -1,6 +1,6 @@
 # 技术说明：模块、变量、函数与工具
 
-更新日期：2026-10-24。依据当前本地源码整理；描述已实现内容，计划与待修正项另列。修改代码时同步更新本文件，不记录密钥值或真实客户资料。
+更新日期：2026-10-26。依据当前本地源码整理；描述已实现内容，计划与待修正项另列。修改代码时同步更新本文件，不记录密钥值或真实客户资料。
 
 ## 1. 模块分工
 
@@ -11,10 +11,10 @@
 | `app/prompts/recommendation_promt.py` | 保存商品推荐助手的业务规则 | 文件名按当前源码记录 |
 | `app/agent/product_recommendation.py` | 组合模型、提示词与工具 | 工厂函数创建 Agent；终端交互已隔离 |
 | `app/tools/search_products.py` | 查询商城商品，整理结果与错误状态 | 可独立调用，已注册到 Agent |
-| `app/embedding.py` | 创建向量模型封装 | 独立运行曾返回1024维向量 |
-| `app/setup_knowledge.py` | 创建知识库引擎并初始化向量表 | 建表成功；包含 Windows 事件循环配置 |
-| `app/knowledge.py` | 创建向量存储对象 | 初稿存在导入与参数待修正项，未接入 Agent |
-| `knowledge/` | 保存品牌知识与售后知识 Markdown | 正文已整理，未完成向量化入库 |
+| `app/rag/embedding.py` | 创建向量模型封装 | 独立运行曾返回1024维向量 |
+| `app/scripts/setup_knowledge.py` | 调用独立引擎并初始化向量表 | 已建表，不随聊天请求运行 |
+| `app/rag/knowledge.py` | 创建向量存储对象 | 已通过embedding_service接入向量模型，供知识工具调用 |
+| `knowledge/` | 保存品牌知识与售后知识 Markdown | 剪刀正文已确认34片段入库；售后正文未确认入库 |
 | 各目录中的 `__init__.py` | 标识 Python 包 | 当前无业务逻辑 |
 
 ## 2. HTTP 对话接口与生命周期
@@ -23,7 +23,7 @@
 - POST /api/chat：ChatRequest 接收 message、session_id；ChatResponse 返回 reply。message 为1～1000字符，session_id 为1～100字符，先去除字符串首尾空白。
 - chat(request, http_request)：从 http_request.app.state.recommendation_agent 获取 Agent，将新增 HumanMessage 和 thread_id 配置传给 invoke()，提取最后一条消息正文。
 - Request：FastAPI 请求对象，用来访问应用状态，不是用户提交的数据结构。
-- lifespan(app)：启动时 pool.open()、pool.wait(timeout=10)，创建 PostgresSaver(pool) 及 Agent；yield 后处理请求，退出时 finally 关闭池。
+- lifespan(app)：启动时 pool.open()、pool.wait(timeout=10)，创建PostgresSaver(pool)、知识引擎、向量库及知识工具，再创建Agent；yield后处理请求，退出时关闭知识引擎和连接池。
 - app.state.db_pool：服务持有的连接池；app.state.recommendation_agent：使用数据库检查点的 Agent。
 
 启动命令：`python -m uvicorn app.main:app --reload`。直接运行 main.py 不会启动 Uvicorn；自动重载会重新创建应用资源，但数据库状态可保留。
@@ -52,7 +52,7 @@
 |---|---|---|
 | `recommendation_prompt` | 字符串 | 规定目标用户、选购需求收集、事实依据和承诺边界；规则应与实际工具能力保持一致 |
 | `create_agent(...)` | 框架函数 | 将模型、工具与系统提示词组装为可运行的 Agent |
-| `recommendation_agent` | Agent 对象 | 由创建函数返回；已注册 search_products，保存方式由 checkpointer 参数决定 |
+| `recommendation_agent` | Agent 对象 | 由创建函数返回；已注册 search_products，可传入knowledge_tool注册search_knowledge；保存方式由checkpointer决定 |
 | `HumanMessage` | 消息类 | 表示用户输入 |
 | `resp` | Agent 返回的状态结果 | 包含 `messages`；可用 `resp["messages"][-1].content` 取最后一条消息正文 |
 
@@ -146,8 +146,8 @@ python -m app.tools.search_products
 | asynccontextmanager | contextlib 标准库装饰器，为 FastAPI 提供生命周期上下文 |
 | check_connection() | 只读查询当前账号和数据库，验证基本连接 |
 | create_connection_pool() | 创建尚未打开的同步池，最少1个、最多5个连接 |
-| setup_checkpoints() | 在 app/seup_checkpoints.py 中执行 setup()，创建表及运行组件迁移，不放在聊天请求中执行 |
-| create_recommendation_agent(checkpointer) | 创建并返回使用指定保存器的 Agent；不是发送消息的函数 |
+| setup_checkpoints() | 在 app/scripts/seup_checkpoints.py 中执行 setup()，创建表及运行组件迁移，不放在聊天请求中执行 |
+| create_recommendation_agent(checkpointer, knowledge_tool=None) | 创建并返回使用指定保存器的 Agent；不是发送消息的函数 |
 
 连接池使用空 conninfo，读取本地环境中的 PGHOST、PGPORT、PGDATABASE、PGUSER、PGPASSWORD。SSH 开发连接使用本地127.0.0.1:15432转发到服务器 PostgreSQL；隧道需另行保持运行，DataGrip 的连接不自动供 Python 使用。凭据与私钥不写入本文。
 
@@ -174,7 +174,7 @@ HTTP 使用数据库记忆；终端 __main__ 入口使用 InMemorySaver，当前
 
 验证：完成服务重启并核对响应截图后，确认同一会话恢复测试编号和选购条件；两个已有会话表现符合各自历史。全新会话隔离、用户身份授权和并发正确性未完成验证。
 
-待办：绑定工具输入 schema 并统一长度；进一步验证输入、异常与超时控制；区分测试商品；规范配置与类型标注；补会话归属、历史保留及备份。未来 RAG 可另行扩展，不将检查点表当向量知识库。
+待办：绑定工具输入 schema 并统一长度；进一步验证输入、异常与超时控制；区分测试商品；规范配置与类型标注；补会话归属、历史保留及备份。RAG已单独使用knowledge_chunks，不将检查点表当向量知识库。
 
 ## 7. 输入约束与异常响应
 
@@ -218,7 +218,7 @@ HTTP 使用数据库记忆；终端 __main__ 入口使用 InMemorySaver，当前
 | request_timeout=15、max_retries=2 | 当前网络请求配置，不构成整个入库过程的总耗时限制 |
 | embed_query()、embed_documents() | 分别向量化问题和多段资料；实际调用会请求向量服务 |
 
-独立入口为 `python -m app.embedding`，会发送真实向量请求。学习记录确认曾返回1024维向量；创建封装对象本身不代表调用成功。兼容客户端需使用兼容接口路径，不直接套用原生 SDK 路径。
+独立入口为 `python -m app.rag.embedding`，会发送真实向量请求。学习记录确认曾返回1024维向量；创建封装对象本身不代表调用成功。兼容客户端需使用兼容接口路径，不直接套用原生 SDK 路径。
 
 ### 引擎与初始化
 
@@ -232,21 +232,42 @@ HTTP 使用数据库记忆；终端 __main__ 入口使用 InMemorySaver，当前
 
 学习记录确认项目数据库已启用 pgvector 0.6.0，知识表初始化成功；本文未重新连接数据库核查表结构、行数或权限。初始化表不等于写入知识，也不修改会话检查点用途。
 
-### 向量存储初稿与待修正项
+### RAG模块与实际调用
 
-当前 app/knowledge.py 中函数实际名为 `creat_knowledge_store()`，调用 `PGVectorStore.create_sync()`。源码存在以下待修正项，不能作为已可用的知识检索入口：
+| 名称 | 用途 |
+|---|---|
+| app/rag/engine.py：create_knowledge_engine() | 读取app/.env，组装SQLAlchemy URL，设置Windows兼容策略，创建PGEngine；与会话连接池分别管理 |
+| app/rag/embedding.py：create_embedding_model() | 创建1024维向量封装 |
+| app/rag/chunk_knowledge.py：split_markdown(file_path) | 读取Markdown，按标题分章节，普通章节递归切分，返回Document列表 |
+| app/rag/knowledge.py：create_knowledge_store(engine) | 使用PGVectorStore.create_sync、embedding_service创建已有表的访问对象，不重新建表 |
+| app/rag/import_knowledge.py：import_markdown(file_path, project_root) | 生成相对来源与UUID5，add_documents向量化并写入，finally关闭引擎 |
+| app/tools/search_knowledge.py：create_search_knowledge_tool(store) | 工厂返回闭包工具，绑定已有store，供模型传入query |
+| search_knowledge(query) | similarity_search(query,k=3)，返回results，每项含content、source、section；section取三级标题，缺失为空字符串 |
 
-- 从 app.setup_knowledge 导入 engine，但该变量仅在脚本 __main__ 中赋值，普通导入时没有对应模块变量。
-- 函数未接收 engine；已讨论改为 create_knowledge_store(engine)，由调用方创建、传入并关闭引擎，但当前源码未落实。
-- 当前传入 embedding_model，学习中讨论的参数为 embedding_service；需按实际安装版本核对签名后修正。
-- 未实现 Markdown 读取、切分、文档写入或相似度查询，未接入 FastAPI 生命周期，也未注册 search_knowledge 工具。
+切分规则：普通章节chunk_size=700、chunk_overlap=100，len计字符；按段落、换行、中文标点等递归分割。含首尾管道符行的章节整体保留，这是Demo启发式，不是完整Markdown表格解析。片段加“主题”标题路径，metadata保留标题、source、chunk_index；入库时source替换为项目相对路径。整表章节可超过700字符，当前见1440字符片段。
 
-目标链路（尚未完成）：
+稳定ID使用UUID5(来源路径+正文)。当前组件对相同ID执行更新，但重跑仍产生向量费用；正文变化产生新ID，旧记录不会自动删除。资料或向量模型变化需要另行清理或迁移。
+
+命令及副作用：
+
+- python -m app.rag.chunk_knowledge：读取并打印切分，纯本地。
+- python -m app.rag.embedding：真实Embedding请求。
+- python -m app.rag.import_knowledge：当前__main__只做固定问题的相似度检索，不调用import_markdown；需要SSH与问题向量化。不要将此入口描述为自动重新入库。
+- python -m app.scripts.setup_knowledge：建表初始化，已有表不要覆盖或重复执行。
+
+生命周期：
 
 ```text
-Markdown正文 → 按标题切分 → 文档向量化 → knowledge_chunks
-用户问题 → 问题向量化 → 检索相关片段 → Agent依据资料回答
+启动 → 会话连接池 → PostgresSaver
+     → PGEngine → PGVectorStore → search_knowledge工具
+     → create_recommendation_agent(checkpointer, knowledge_tool)
+请求 → 模型选择商品查询/知识检索 → 工具结果 → 完整回答
+关闭 → await knowledge_engine.close() → pool.close()
 ```
+
+两个数据库资源分别创建和释放；知识引擎内部异步不代表HTTP流式响应。当前接口仍一次性返回reply。
+
+已验证证据：用户日志写入34片段；固定比较问题命中440C、China 440C和评级区别；工具轨迹与Basic材质回答确认知识工具参与。未据此认定全部知识正确、全部问题可召回，或正式商品推荐已通过。
 
 ## 9. Markdown 知识源与维护边界
 
@@ -264,10 +285,10 @@ Markdown正文 → 按标题切分 → 文档向量化 → knowledge_chunks
 - 商品名称保留China 440C，材料属性按9CR18，使用性能参照440C属于品牌确认口径；不写成外部检测结论。
 - 耐腐蚀、锋利度保持和抗崩口为品牌内部相对评级，不代表成品检测、初始锋利度或抗摔保证。
 - 剪刀语境中的“寸”为英寸简称，标称尺寸不等于有效刃长；左右手重点区分刀片交叠结构，不能仅凭手柄判断。
-- 推荐流程与默认条件保留在维护记录，尚未进入应用提示词；当前提示词仍有按销量和价格排序的旧要求，商品工具不提供对应完整排序依据，需另行同步。
+- 推荐流程与默认条件保留在维护记录，尚未进入应用提示词；当前提示词已区分商品与知识工具，并明确不支持库存与销量排序；维护记录中的其他推荐规则仍需逐项确认是否接入。
 - 外部资料的重要摘要已写入本地正文，链接用于追溯；文本检索不会因存在链接就自动访问网页。
 
-后续导入按明确的正文文件范围执行，排除目录说明与维护文件；优先按标题切分，保留文档路径、标题层级、品牌、更新时间和来源。钢材资料卡及表头、评级性质应与正文保持关联。重新入库需替换旧片段，避免新旧版本同时命中；目前这些是维护约定，尚未实现导入流程。
+后续导入按明确的正文文件范围执行，排除目录说明与维护文件；优先按标题切分，保留文档路径、标题层级、品牌、更新时间和来源。钢材资料卡及表头、评级性质应与正文保持关联。重新入库需替换旧片段，避免新旧版本同时命中；当前已实现单文件切分、入库与检索；尚未自动同步旧片段、品牌及更新时间等全部元数据，维护约定不等于全部落地。
 
 图片当前仅用于人工辅助整理知识，尚未实现图片识别、图片检索或用户上传图片处理。
 

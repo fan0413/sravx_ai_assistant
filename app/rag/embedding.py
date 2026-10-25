@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 import pathlib
-env_path = pathlib.Path(__file__).resolve().parent/".env"
+env_path = pathlib.Path(__file__).resolve().parent.parent/".env"
 load_dotenv(dotenv_path=env_path)
 from langchain_openai import OpenAIEmbeddings
 def create_embedding_model():
