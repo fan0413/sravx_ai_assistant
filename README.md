@@ -81,7 +81,6 @@ python -m uvicorn app.main:app --reload
 
 ## 文档
 
-- [立项与实施步骤](docs/project-plan.md)
 - [学习开发日志](docs/development-log.md)
 - [技术说明](docs/technical-reference.md)
 
