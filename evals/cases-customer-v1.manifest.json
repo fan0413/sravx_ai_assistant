@@ -1,0 +1,18 @@
+{
+  "created_date": "2026-10-29",
+  "dataset_version": "customer-v1",
+  "live_cases": 24,
+  "fixture_cases": 6,
+  "live_multi_turn_cases": 6,
+  "enabled_knowledge": [
+    "knowledge/02宠物美容剪刀与工具/宠物美容剪刀.md"
+  ],
+  "not_enabled": [
+    "knowledge/03售后与维护/剪刀使用异常与维护.md"
+  ],
+  "sha256": {
+    "knowledge/02宠物美容剪刀与工具/宠物美容剪刀.md": "327aee1c98da558ff282b500c2c3e05fa51dd67aea5d6278dff12d1656d26563",
+    "evals/cases-customer-v1.jsonl": "b787f0e53bae3a5ce7004ca8fcbadac45117c9724150f0e874cead68a5542881",
+    "evals/cases-customer-fixtures-v1.jsonl": "be0db3d8c34c705ed3748ce913bff6445662ff6ae9b51c529f63260034e29179"
+  }
+}

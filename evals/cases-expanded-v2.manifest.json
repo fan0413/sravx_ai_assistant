@@ -1,0 +1,11 @@
+{
+  "sha256": {
+    "knowledge/03售后与维护/剪刀使用异常与维护.md": "BEDE010487E4661294FEDF3AB01C65DE1AC26B3A7F5F0F17CD2FE817C6202EE7",
+    "evals/cases-expanded-v2.jsonl": "EDDD186D2ECFD8DD4240E71DA50EFADE173CD8DEED6F0CF98D4AC81428389F30",
+    "knowledge/02宠物美容剪刀与工具/宠物美容剪刀.md": "327AEE1C98DA558FF282B500C2C3E05FA51DD67AEA5D6278DFF12D1656D26563"
+  },
+  "dataset": "sravx-agent-knowledge-expanded-v2",
+  "created_date": "2026-10-29",
+  "new_cases": 34,
+  "baseline": "evals/cases.jsonl"
+}

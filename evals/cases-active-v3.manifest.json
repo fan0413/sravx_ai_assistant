@@ -1,0 +1,38 @@
+{
+  "dataset": "sravx-agent-active-knowledge-v3",
+  "created_date": "2026-10-29",
+  "enabled_sources": [
+    "knowledge/02宠物美容剪刀与工具/宠物美容剪刀.md"
+  ],
+  "excluded_sources": [
+    "knowledge/03售后与维护/剪刀使用异常与维护.md"
+  ],
+  "excluded_case_ids": [
+    "K31",
+    "K32",
+    "K33",
+    "K34",
+    "K35",
+    "K36",
+    "K37"
+  ],
+  "total_cases": 50,
+  "retained_cases": 32,
+  "new_cases": 18,
+  "category_counts": {
+    "knowledge": 5,
+    "material": 10,
+    "boundary": 5,
+    "size": 6,
+    "type": 10,
+    "handedness": 5,
+    "appearance": 3,
+    "multi_turn": 4,
+    "structure": 2
+  },
+  "sha256": {
+    "knowledge/02宠物美容剪刀与工具/宠物美容剪刀.md": "327aee1c98da558ff282b500c2c3e05fa51dd67aea5d6278dff12d1656d26563",
+    "evals/cases-active-v3.jsonl": "500f138de300df913b3f2ffd93b94c25bf6147303eb81f0ba6cd34ac0aaeaaca",
+    "evals/cases-active-regression-v3.jsonl": "b61e2ec972812714bf8ba5bbc50145ee48e6211f54d4eac602ae73c5a93ad980"
+  }
+}

@@ -1,0 +1,5 @@
+{"id":"K01","category":"knowledge","messages":["SRAVX 有哪些剪刀系列？"],"expected_tools":["search_knowledge"],"required_points":["Basic：练习、入门定位","Pro：日用主力、中高端定位","Master：高端定位"],"forbidden_claims":["所有具体型号的参数都可以由系列确定"]}
+{"id":"K02","category":"knowledge","messages":["Basic 一般用什么钢材？"],"expected_tools":["search_knowledge"],"required_points":["通常对应9CR13","练习、入门定位","具体型号以商品资料为准"],"forbidden_claims":["每款Basic都确定使用9CR13"]}
+{"id":"K03","category":"knowledge","messages":["China 440C 和 440C 有什么区别？"],"expected_tools":["search_knowledge"],"required_points":["本品牌China 440C材料属性按9CR18记录","使用性能参照440C","不表示化学成分或所有型号实测性能完全相同"],"forbidden_claims":["两者只是产地不同","两者化学成分完全相同"]}
+{"id":"K05","category":"knowledge","messages":["440C 的耐腐蚀评级高，是不是不会生锈？"],"expected_tools":["search_knowledge"],"required_points":["品牌内部相对评级","不代表不会生锈","不是成品检测保证"],"forbidden_claims":["不会生锈","任意消毒剂都可以使用"]}
+{"id":"K06","category":"knowledge","messages":["Basic 的出厂硬度是多少？"],"expected_tools":["search_knowledge"],"required_points":["目前缺少可靠的成品硬度依据","不能把材料参考当作具体型号出厂硬度"],"forbidden_claims":["给出没有型号检测依据的确定出厂HRC数值"]}
